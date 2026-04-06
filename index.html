@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANKH V4: PREDICTIVE COMMAND</title>
+    <style>
+        :root { --bg: #020202; --card: #0d0d0d; --accent: #00d4ff; --up: #00ff88; --down: #ff4444; --border: #1a1a1a; --text: #eee; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        header { background: #080808; border-bottom: 1px solid #222; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
+        .search-wrap { display: flex; gap: 10px; }
+        input { background: #151515; border: 1px solid #333; color: white; padding: 10px; border-radius: 4px; width: 300px; outline: none; }
+        button { background: var(--accent); color: black; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+
+        main { display: grid; grid-template-columns: 350px 1fr 350px; gap: 15px; padding: 15px; flex: 1; overflow: hidden; }
+        .panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 15px; overflow-y: auto; }
+        
+        /* Prediction Widget */
+        .predict-box { background: #111; border-left: 4px solid var(--accent); padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        .prob-score { font-size: 2rem; font-weight: 900; color: var(--up); font-family: monospace; }
+
+        /* Ticker Cards */
+        .ticker-card { background: #121212; border: 1px solid #222; padding: 15px; border-radius: 8px; margin-bottom: 12px; cursor: pointer; transition: 0.2s; }
+        .ticker-card:hover { border-color: var(--accent); transform: scale(1.02); }
+        .sym { font-size: 1.2rem; font-weight: 800; color: var(--accent); }
+        .price { font-size: 1.8rem; font-family: monospace; font-weight: bold; margin: 5px 0; }
+        
+        /* Scrolling Ticker */
+        .ticker-bar { background: #080808; border-top: 1px solid #222; padding: 10px; white-space: nowrap; overflow: hidden; }
+        .ticker-text { display: inline-block; animation: scroll 40s linear infinite; font-family: monospace; }
+        @keyframes scroll { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
+
+        .up { color: var(--up); } .down { color: var(--down); }
+        .btn-sm { background: #222; color: #888; font-size: 0.6rem; padding: 5px 10px; border-radius: 3px; text-decoration: none; margin-right: 5px; border: 1px solid #333; }
+        .btn-sm:hover { border-color: var(--accent); color: white; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="font-size: 1.4rem; font-weight: 900;">ANKH <span style="color:var(--accent)">V4 PRO</span></div>
+    <div class="search-wrap">
+        <input type="text" id="sInput" placeholder="Enter Symbol (AAPL, NVDA, SPY...)">
+        <button onclick="addAsset()">ANALYZE / ADD</button>
+    </div>
+</header>
+
+<main>
+    <div class="panel">
+        <h4 style="color:#555; text-transform: uppercase; font-size: 0.7rem;">Analyst Sentiment Engine</h4>
+        <div class="predict-box">
+            <div id="p-sym" style="font-weight:bold; color:var(--accent)">SELECT ASSET</div>
+            <div class="prob-score" id="p-score">--%</div>
+            <div style="font-size:0.6rem; color:#666">CONCRETE ANALYST BUY PROBABILITY</div>
+        </div>
+        <hr style="border:0; border-top:1px solid #222; margin:20px 0">
+        <h4 style="color:#555; text-transform: uppercase; font-size: 0.7rem;">Global Energy Spread</h4>
+        <div id="oil-arb" style="font-family:monospace; font-size:0.9rem;">WTI/BRENT: LOADING...</div>
+    </div>
+
+    <div class="panel">
+        <h4 style="color:#555; text-transform: uppercase; font-size: 0.7rem;">Active Command Watchlist</h4>
+        <div id="watchlist-container"></div>
+    </div>
+
+    <div class="panel">
+        <h4 style="color:#555; text-transform: uppercase; font-size: 0.7rem;">Bloomberg/Reuters Feed</h4>
+        <div id="news-feed" style="font-size: 0.8rem;"></div>
+    </div>
+</main>
+
+<div class="ticker-bar">
+    <div class="ticker-text" id="scroll-text">
+        S&P 500: 5,204.30 (+0.32%) | NASDAQ: 16,332.20 (+1.10%) | DOW: 38,904.04 (-0.12%) | GOLD: $2,329.10 | CRUDE: $86.91
+    </div>
+</div>
+
+<script>
+    const API = { FINN: 'cot4gfhr01qgmopn3vag', TWELVE: '528388fd472444618660d5286cd89e04', ALPHA: 'WNLJBOUW9NKEVHYI' };
+    let watchlist = ['AAPL', 'NVDA', 'TSLA', 'SPY', 'QQQ'];
+
+    async function init() {
+        render();
+        updateNews();
+        updateEnergy();
+        refresh();
+        setInterval(refresh, 30000);
+    }
+
+    function render() {
+        const container = document.getElementById('watchlist-container');
+        container.innerHTML = watchlist.map(s => {
+            const id = s.replace(/[^a-z0-9]/gi, '_');
+            return `
+                <div class="ticker-card" onclick="analyze('${s}')">
+                    <div style="display:flex; justify-content:space-between">
+                        <span class="sym">${s}</span>
+                        <span style="font-size:0.6rem; color:#444">CLICK TO PREDICT</span>
+                    </div>
+                    <div class="price" id="prc-${id}">0.00</div>
+                    <div id="chg-${id}" style="font-weight:bold; font-size:0.9rem">--</div>
+                    <div style="margin-top:10px">
+                        <a class="btn-sm" href="https://finviz.com/quote.ashx?t=${s}" target="_blank">CHART</a>
+                        <a class="btn-sm" href="https://finance.yahoo.com/quote/${s}" target="_blank">RATINGS</a>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    async function analyze(s) {
+        document.getElementById('p-sym').innerText = `ANALYZING ${s}...`;
+        const res = await fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${s}&token=${API.FINN}`).then(r => r.json());
+        if (res.length > 0) {
+            const latest = res[0];
+            const total = latest.strongBuy + latest.buy + latest.hold + latest.sell + latest.strongSell;
+            const bullish = latest.strongBuy + latest.buy;
+            const prob = ((bullish / total) * 100).toFixed(1);
+            
+            document.getElementById('p-sym').innerText = `${s} CONSENSUS`;
+            document.getElementById('p-score').innerText = `${prob}%`;
+            document.getElementById('p-score').style.color = prob > 50 ? 'var(--up)' : 'var(--down)';
+        }
+    }
+
+    async function refresh() {
+        watchlist.forEach(async (s) => {
+            const id = s.replace(/[^a-z0-9]/gi, '_');
+            const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${s}&token=${API.FINN}`).then(r => r.json());
+            if (res.c) {
+                const diff = (res.c - res.pc).toFixed(2);
+                document.getElementById(`prc-${id}`).innerText = res.c.toFixed(2);
+                document.getElementById(`chg-${id}`).innerText = `${diff > 0 ? '+' : ''}${diff} (${res.dp.toFixed(2)}%)`;
+                document.getElementById(`chg-${id}`).className = diff >= 0 ? 'up' : 'down';
+            }
+        });
+    }
+
+    function addAsset() {
+        const val = document.getElementById('sInput').value.toUpperCase();
+        if (val && !watchlist.includes(val)) {
+            watchlist.unshift(val);
+            render();
+            refresh();
+            analyze(val);
+            document.getElementById('sInput').value = '';
+        }
+    }
+
+    async function updateEnergy() {
+        const w = await fetch(`https://www.alphavantage.co/query?function=WTI&apikey=${API.ALPHA}`).then(r => r.json());
+        const b = await fetch(`https://www.alphavantage.co/query?function=BRENT&apikey=${API.ALPHA}`).then(r => r.json());
+        if (w.data) {
+            const spread = Math.abs(w.data[0].value - b.data[0].value).toFixed(2);
+            document.getElementById('oil-arb').innerText = `WTI: $${w.data[0].value} | BRENT: $${b.data[0].value} | SPREAD: $${spread}`;
+        }
+    }
+
+    async function updateNews() {
+        const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${API.FINN}`).then(r => r.json());
+        document.getElementById('news-feed').innerHTML = res.slice(0,10).map(n => `
+            <div style="margin-bottom:15px; border-bottom:1px solid #1a1a1a; padding-bottom:8px; cursor:pointer" onclick="window.open('${n.url}')">
+                <b>${n.headline}</b><br><small style="color:#444">${n.source}</small>
+            </div>`).join('');
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
